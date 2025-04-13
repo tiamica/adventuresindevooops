@@ -1,5 +1,3 @@
-Here's a polished `README.md` for your GitHub repository:
-
 ```markdown
 # 🕹️ Adventures in DevOOPS pt.1: The Code Crusade
 
@@ -60,7 +58,7 @@ Here's a polished `README.md` for your GitHub repository:
 | Toggle Shield   | E             |
 
 **Objective:** Survive waves of enemies while protecting the CI/CD pipeline!
-
+   ```
 ## 🛠️ Installation
 
 1. Clone repo:

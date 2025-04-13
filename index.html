@@ -227,6 +227,70 @@
             font-size: 14px;
             text-shadow: 0 0 3px #000;
         }
+        /* Add highscore leaderboard styling */
+        #highscoreContainer {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 300px;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: #0ff;
+            padding: 20px;
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: transform 0.3s ease-in-out;
+        }
+        #highscoreContainer.show {
+            transform: translateX(0);
+        }
+        #highscoreTable {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        #highscoreTable th, #highscoreTable td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #0ff;
+        }
+        #highscoreTable th {
+            background-color: rgba(0, 255, 255, 0.2);
+        }
+        #nameInputContainer {
+            display: none;
+            margin-top: 20px;
+            text-align: center;
+        }
+        #nameInput {
+            background-color: #222;
+            color: #0ff;
+            border: 1px solid #0ff;
+            padding: 8px;
+            width: 200px;
+            margin-bottom: 10px;
+        }
+        #saveScoreButton {
+            background-color: #0ff;
+            color: #000;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        .highscore-buttons {
+            margin-top: 20px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .highscore-buttons button {
+            background-color: #0ff;
+            color: #000;
+            border: none;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body>
@@ -252,7 +316,35 @@
     <div id="gameOver">
         <h1>SYSTEM FAILURE</h1>
         <p id="finalScore">Score: 0</p>
+        <div id="nameInputContainer">
+            <p>New high score! Enter your name:</p>
+            <input type="text" id="nameInput" maxlength="20" placeholder="Your name">
+            <button id="saveScoreButton">Save Score</button>
+        </div>
         <button id="restartButton">RESTART</button>
+        <button id="viewHighscoresButton" style="margin-top: 10px; background-color: #0ff; color: #000; border: none; padding: 15px 30px; font-size: 20px; cursor: pointer; border-radius: 5px;">VIEW HIGHSCORES</button>
+    </div>
+    <div id="highscoreContainer">
+        <h2>HIGHSCORES</h2>
+        <table id="highscoreTable">
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Name</th>
+                    <th>Score</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody id="highscoreTableBody">
+                <!-- Highscores will be inserted here -->
+            </tbody>
+        </table>
+        <div class="highscore-buttons">
+            <button id="exportHighscores">Export CSV</button>
+            <button id="importHighscores">Import CSV</button>
+            <button id="closeHighscores">Close</button>
+        </div>
+        <input type="file" id="importFile" accept=".csv" style="display: none;">
     </div>
     <div class="crosshair"></div>
     <div id="hitMarker">✓</div>
@@ -274,6 +366,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+    <script src="highscore.js"></script>
     <script>
         // Main game code starts here
         document.addEventListener('DOMContentLoaded', function() {
@@ -320,12 +413,12 @@
             // Game configuration
             const config = {
                 playerHealth: 100,
-                playerSpeed: 300, // Decreased from 500 for better control
-                jumpForce: 300,
+                playerSpeed: 6, // Adjusted for better movement feel
+                jumpForce: 8,
                 gravity: -9.8 * 5,
                 ammo: 30,
                 maxAmmo: 30,
-                reloadTime: 1500, // milliseconds
+                reloadTime: 2,
                 meleeCooldown: 600, // milliseconds
                 ultimateChargeMax: 100,
                 ultimateCharge: 0,
@@ -340,8 +433,14 @@
                 score: 0,
                 killsPerWave: 10,
                 enemiesKilled: 0,
-                bulletSpeed: 100, // Control bullet speed
-                bulletLifetime: 3000 // Bullets live for 3 seconds max
+                bulletSpeed: 40, // Increase bullet speed for better aiming
+                bulletLifetime: 5, // How long bullets exist in seconds
+                enemyHealth: 100,
+                enemySpawnRate: 2, // Time in seconds between enemy spawns
+                enemySpawnLimit: 20, // Maximum number of enemies at once
+                gameTime: 300, // 5 minutes in seconds
+                scoreForKill: 100,
+                mouseSensitivity: 0.2 // Add mouse sensitivity config
             };
 
             // Audio configuration
@@ -449,9 +548,6 @@
             floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
             world.addBody(floorBody);
 
-            // Create server room environment
-            createEnvironment();
-
             // Player setup
             const controls = new THREE.PointerLockControls(camera, document.body);
             let playerBody;
@@ -518,15 +614,8 @@
                 jump: false
             };
 
-            // Event listeners
-            window.addEventListener('resize', onWindowResize);
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
-            document.addEventListener('mousedown', onMouseDown);
-            document.addEventListener('mouseup', onMouseUp);
-            startButton.addEventListener('click', startGame);
-            restartButton.addEventListener('click', restartGame);
-
+            // Event listeners are now set up in the init function
+            
             // Controls lock change handler
             controls.addEventListener('lock', function() {
                 if (!gameOver) {
@@ -586,19 +675,68 @@
 
             // Start the game
             function startGame() {
+                console.log("Starting game...");
                 startMenu.style.display = 'none';
+                
+                // Reset game state for clean start
+                config.wave = 1;
+                config.killsPerWave = 10;
+                config.maxEnemies = 10;
+                config.playerHealth = 100;
+                config.ammo = config.maxAmmo;
+                config.score = 0;
+                
+                // Update UI
+                healthDisplay.textContent = config.playerHealth;
+                healthFill.style.width = config.playerHealth + '%';
+                ammoDisplay.textContent = config.ammo;
+                scoreDisplay.textContent = 'Score: ' + config.score;
+                waveInfo.textContent = 'Wave: ' + config.wave;
+                
                 initPlayer();
                 controls.lock();
                 playMusic();
                 isGameActive = true;
                 gameOver = false;
+                
+                // Clear all existing objects for clean start
+                while (enemies.length > 0) {
+                    removeEnemy(enemies[0]);
+                }
+                
+                while (bullets.length > 0) {
+                    removeBullet(bullets[0]);
+                }
+                
+                while (powerUps.length > 0) {
+                    removePowerUp(powerUps[0]);
+                }
+                
                 spawnServerRacks();
                 spawnEnemyWave(); // Spawn initial wave
+                
+                // Reset time for delta calculation
+                lastTime = performance.now();
+                
+                // Start animation loop
                 animate();
+                
+                console.log("Game started successfully");
             }
 
             // Restart the game
             function restartGame() {
+                // When player enters name, store it for next time
+                if (nameInput.value.trim()) {
+                    localStorage.setItem('playerName', nameInput.value.trim());
+                }
+                
+                // Hide name input
+                nameInputContainer.style.display = 'none';
+                
+                // Hide highscore container
+                highscoreContainer.classList.remove('show');
+                
                 // Reset game configuration
                 config.playerHealth = 100;
                 config.ammo = config.maxAmmo;
@@ -872,119 +1010,185 @@
             }
 
             // Function to spawn an enemy
-          function spawnEnemy() {
-            if (config.enemyCount >= config.maxEnemies) return;
+            function spawnEnemy() {
+                // Safety check
+                if (!playerBody || !isGameActive) return null;
+                
+                // Enemy limit check
+                if (enemies.length >= config.maxEnemies) return null;
 
-            const enemyType = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
-            const angle = Math.random() * Math.PI * 2;
-            const x = playerBody.position.x + Math.cos(angle) * config.enemySpawnRadius;
-            const z = playerBody.position.z + Math.sin(angle) * config.enemySpawnRadius;
-
-            // Check if the enemy would spawn inside a server rack
-            let isInsideRack = false;
-            for (const rack of scene.children) {
-                if (rack.type === 'Group') { // Server racks are groups
-                    const rackX = rack.position.x;
-                    const rackZ = rack.position.z;
-                    const distance = Math.sqrt(Math.pow(x - rackX, 2) + Math.pow(z - rackZ, 2));
-                    if (distance < 5) { // If within 5 units of a rack
-                        isInsideRack = true;
-                        break;
+                try {
+                    // Choose a random enemy type
+                    const enemyType = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+                    
+                    // Calculate spawn position (random angle around player)
+                    const angle = Math.random() * Math.PI * 2;
+                    const spawnRadius = config.enemySpawnRadius * (0.8 + Math.random() * 0.4); // Add some variation
+                    const x = playerBody.position.x + Math.cos(angle) * spawnRadius;
+                    const z = playerBody.position.z + Math.sin(angle) * spawnRadius;
+                    
+                    // Make sure spawn position is valid
+                    if (isNaN(x) || isNaN(z)) {
+                        console.error("Invalid spawn coordinates");
+                        return null;
                     }
-                }
-            }
 
-            if (isInsideRack) {
-                // Try spawning again, recursively, up to a maximum number of attempts
-                spawnEnemy(); // Recursive call
-                return; // Important: Exit the current spawn attempt
-            }
-
-            const enemy = {
-                type: enemyType,
-                health: enemyType.health,
-                speed: enemyType.speed,
-                damage: enemyType.damage,
-                mesh: createEnemyMesh(enemyType.color, enemyType.scale),
-                body: createEnemyPhysicsBody(x, 1, z, enemyType.scale),
-                scale: enemyType.scale,
-                isAlive: true
-            };
-            enemy.mesh.position.set(x, 1, z);
-            scene.add(enemy.mesh);
-            world.addBody(enemy.body);
-            enemies.push(enemy);
-            config.enemyCount++;
-        }
-
-            // Function to create enemy mesh
-            function createEnemyMesh(color, scale) {
-                const geometry = new THREE.SphereGeometry(0.5 * scale, 8, 8);
-                const material = new THREE.MeshStandardMaterial({ color: color, roughness: 0.9, metalness: 0.1 });
-                const mesh = new THREE.Mesh(geometry, material);
-                mesh.castShadow = true;
-                mesh.receiveShadow = true;
-                return mesh;
-            }
-
-            // Function to create enemy physics body
-            function createEnemyPhysicsBody(x, y, z, scale) {
-                const shape = new CANNON.Sphere(0.5 * scale);
-                const body = new CANNON.Body({
-                    mass: 10 * scale,
-                    position: new CANNON.Vec3(x, y, z),
-                    linearDamping: 0.9
-                });
-                body.addShape(shape);
-                return body;
-            }
-
-            // Function to remove enemy
-            function removeEnemy(enemy) {
-                if (!enemy) return;
-                if (enemy.mesh) {
-                  scene.remove(enemy.mesh);
-                }
-                if (enemy.body) {
-                  world.removeBody(enemy.body);
-                }
-                const index = enemies.indexOf(enemy);
-                if (index > -1) {
-                    enemies.splice(index, 1);
-                }
-                config.enemyCount--;
-            }
-
-            // Function to deal damage to enemy
-            function damageEnemy(enemy, damage) {
-                if (!enemy.isAlive) return;
-                enemy.health -= damage;
-                if (enemy.health <= 0) {
-                    enemy.isAlive = false;
-                    config.score += enemy.type.scoreValue;
-                    scoreDisplay.textContent = 'Score: ' + config.score;
-                    config.killsPerWave--;
-                    config.enemiesKilled++;
-                    if (enemy.type.onDeath) {
-                        enemy.type.onDeath(enemy);
+                    // Check if the enemy would spawn inside a server rack
+                    let isInsideRack = false;
+                    for (const rack of scene.children) {
+                        if (rack.type === 'Group') { // Server racks are groups
+                            const rackX = rack.position.x;
+                            const rackZ = rack.position.z;
+                            const distance = Math.sqrt(Math.pow(x - rackX, 2) + Math.pow(z - rackZ, 2));
+                            if (distance < 5) { // If within 5 units of a rack
+                                isInsideRack = true;
+                                break;
+                            }
+                        }
                     }
-                    playSound(sounds.enemyDie);
-                    removeEnemy(enemy);
-                    if (config.killsPerWave <= 0) {
-                        config.wave++;
-                        waveInfo.textContent = 'Wave: ' + config.wave;
-                        config.killsPerWave = 10 * config.wave; // Increase kills per wave
-                        config.maxEnemies += 5; // Increase max enemies
-                        spawnEnemyWave();
+
+                    if (isInsideRack) {
+                        // Try again with a different position
+                        return spawnEnemy();
                     }
+
+                    // Create the enemy mesh and physics body
+                    const mesh = createEnemyMesh(enemyType.color, enemyType.scale);
+                    const body = createEnemyPhysicsBody(x, 1, z, enemyType.scale);
+                    
+                    // Create the enemy object
+                    const enemy = {
+                        type: enemyType,
+                        health: enemyType.health,
+                        speed: enemyType.speed,
+                        damage: enemyType.damage,
+                        mesh: mesh,
+                        body: body,
+                        scale: enemyType.scale,
+                        isAlive: true,
+                        lastAttack: 0
+                    };
+                    
+                    // Position the mesh
+                    enemy.mesh.position.set(x, 1, z);
+                    
+                    // Add to scene and physics world
+                    scene.add(enemy.mesh);
+                    world.addBody(enemy.body);
+                    
+                    // Add to enemy array
+                    enemies.push(enemy);
+                    config.enemyCount++;
+                    
+                    return enemy;
+                } catch (e) {
+                    console.error("Error in spawnEnemy:", e);
+                    return null;
                 }
             }
-
+            
+            // This is a guaranteed spawner for initial waves
+            function forceSpawnEnemy() {
+                // Try multiple times if needed
+                for (let attempts = 0; attempts < 5; attempts++) {
+                    const enemy = spawnEnemy();
+                    if (enemy) return enemy;
+                }
+                
+                // If all spawn attempts failed, create at an absolute position
+                try {
+                    const enemyType = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+                    const x = 15; // Fixed position away from racks
+                    const z = 15;
+                    
+                    const mesh = createEnemyMesh(enemyType.color, enemyType.scale);
+                    const body = createEnemyPhysicsBody(x, 1, z, enemyType.scale);
+                    
+                    const enemy = {
+                        type: enemyType,
+                        health: enemyType.health,
+                        speed: enemyType.speed,
+                        damage: enemyType.damage,
+                        mesh: mesh,
+                        body: body,
+                        scale: enemyType.scale,
+                        isAlive: true,
+                        lastAttack: 0
+                    };
+                    
+                    enemy.mesh.position.set(x, 1, z);
+                    scene.add(enemy.mesh);
+                    world.addBody(enemy.body);
+                    enemies.push(enemy);
+                    config.enemyCount++;
+                    
+                    return enemy;
+                } catch (e) {
+                    console.error("Error in force spawn:", e);
+                    return null;
+                }
+            }
+            
             // Function to spawn a wave of enemies
             function spawnEnemyWave() {
-                for (let i = 0; i < 5; i++) { // Spawn 5 enemies per wave initially
-                    setTimeout(spawnEnemy, i * 200); // Staggered spawn
+                // Calculate number of enemies to spawn based on wave
+                const baseSpawn = 3 + Math.floor(config.wave / 2);
+                const enemiesToSpawn = Math.min(baseSpawn, 10); // Cap at 10 at once
+                
+                console.log("Spawning new wave with " + enemiesToSpawn + " enemies");
+                
+                // Guaranteed minimum number of enemies for the wave
+                for (let i = 0; i < enemiesToSpawn; i++) {
+                    setTimeout(() => {
+                        try {
+                            forceSpawnEnemy();
+                        } catch (e) {
+                            console.error("Error spawning enemy in wave:", e);
+                        }
+                    }, i * 300); // Staggered spawn timing
                 }
+                
+                // For higher waves, add a second spawn group after a delay
+                if (config.wave > 1) {
+                    setTimeout(() => {
+                        const secondSpawn = Math.floor(enemiesToSpawn / 2);
+                        console.log("Spawning second group with " + secondSpawn + " enemies");
+                        
+                        for (let i = 0; i < secondSpawn; i++) {
+                            setTimeout(() => {
+                                try {
+                                    if (enemies.length < config.maxEnemies) {
+                                        forceSpawnEnemy();
+                                    }
+                                } catch (e) {
+                                    console.error("Error spawning additional enemy:", e);
+                                }
+                            }, i * 400);
+                        }
+                    }, enemiesToSpawn * 300 + 1500); // Wait after first group
+                }
+                
+                // Set up a periodic check to ensure enemies are spawning correctly
+                const waveCheck = setInterval(() => {
+                    // If no enemies and still have kills to go, force spawn some
+                    if (enemies.length === 0 && config.killsPerWave > 0 && isGameActive && !gameOver) {
+                        console.log("No enemies detected, forcing spawns...");
+                        for (let i = 0; i < 3; i++) {
+                            setTimeout(() => {
+                                try {
+                                    forceSpawnEnemy();
+                                } catch (e) {
+                                    console.error("Error in periodic spawn:", e);
+                                }
+                            }, i * 200);
+                        }
+                    }
+                    
+                    // If wave completed or game over, stop checking
+                    if (config.killsPerWave <= 0 || !isGameActive || gameOver) {
+                        clearInterval(waveCheck);
+                    }
+                }, 5000); // Check every 5 seconds
             }
 
             // Bullet logic
@@ -1031,15 +1235,32 @@
             // Function to remove bullet
             function removeBullet(bullet) {
                 if (!bullet) return;
-                if (bullet.mesh) {
-                    scene.remove(bullet.mesh);
-                }
-                if (bullet.body) {
-                    world.removeBody(bullet.body);
-                }
-                const index = bullets.indexOf(bullet);
-                if (index > -1) {
-                    bullets.splice(index, 1);
+                
+                try {
+                    // Remove from scene
+                    if (bullet.mesh) {
+                        if (bullet.mesh.children.length > 0) {
+                            // Remove any lights attached to the bullet
+                            for (let i = bullet.mesh.children.length - 1; i >= 0; i--) {
+                                bullet.mesh.remove(bullet.mesh.children[i]);
+                            }
+                        }
+                        scene.remove(bullet.mesh);
+                    }
+                    
+                    // Remove from physics world
+                    if (bullet.body) {
+                        bullet.body.position.set(0, -1000, 0); // Move far away before removal
+                        world.removeBody(bullet.body);
+                    }
+                    
+                    // Remove from array
+                    const index = bullets.indexOf(bullet);
+                    if (index > -1) {
+                        bullets.splice(index, 1);
+                    }
+                } catch (e) {
+                    console.error("Error removing bullet:", e);
                 }
             }
 
@@ -1127,16 +1348,86 @@
                 }
             }
 
-            // Function to handle game over
-            function handleGameOver() {
-                gameOver = true;
-                isGameActive = false;
-                controls.unlock();
-                backgroundMusic.pause();
-                playSound(sounds.gameOver);
-                finalScore.textContent = 'Score: ' + config.score;
-                gameOverScreen.style.display = 'flex';
+            // Highscore system
+            const highscoreContainer = document.getElementById('highscoreContainer');
+            const highscoreTableBody = document.getElementById('highscoreTableBody');
+            const nameInputContainer = document.getElementById('nameInputContainer');
+            const nameInput = document.getElementById('nameInput');
+            const saveScoreButton = document.getElementById('saveScoreButton');
+            const viewHighscoresButton = document.getElementById('viewHighscoresButton');
+            const closeHighscoresButton = document.getElementById('closeHighscores');
+            const exportHighscoresButton = document.getElementById('exportHighscores');
+            const importHighscoresButton = document.getElementById('importHighscores');
+            const importFileInput = document.getElementById('importFile');
+            
+            let currentScore = 0;
+            const highscoreManager = new HighscoreManager(10); // Keep top 10 scores
+            
+            // Display highscores in table
+            function displayHighscores() {
+                // Clear existing rows
+                highscoreTableBody.innerHTML = '';
+                
+                // Get current highscores
+                const scores = highscoreManager.getHighscores();
+                
+                // Add each highscore as a row
+                scores.forEach((entry, index) => {
+                    const row = document.createElement('tr');
+                    
+                    row.innerHTML = `
+                        <td>${index + 1}</td>
+                        <td>${entry.name}</td>
+                        <td>${entry.score}</td>
+                        <td>${entry.date}</td>
+                    `;
+                    
+                    highscoreTableBody.appendChild(row);
+                });
+                
+                // Show container
+                highscoreContainer.classList.add('show');
             }
+            
+            // Event Listeners for highscore system
+            saveScoreButton.addEventListener('click', function() {
+                const playerName = nameInput.value.trim();
+                highscoreManager.addHighscore(playerName, currentScore);
+                nameInputContainer.style.display = 'none';
+                displayHighscores();
+            });
+            
+            viewHighscoresButton.addEventListener('click', function() {
+                displayHighscores();
+            });
+            
+            closeHighscoresButton.addEventListener('click', function() {
+                highscoreContainer.classList.remove('show');
+            });
+            
+            exportHighscoresButton.addEventListener('click', function() {
+                exportHighscoresToFile(highscoreManager, 'highscore.csv');
+            });
+            
+            importHighscoresButton.addEventListener('click', function() {
+                importFileInput.click();
+            });
+            
+            importFileInput.addEventListener('change', function(e) {
+                if (e.target.files.length > 0) {
+                    importHighscoresFromFile(e.target.files[0], highscoreManager, function(count) {
+                        alert(`Imported ${count} highscores`);
+                        displayHighscores();
+                    });
+                }
+            });
+            
+            // Handle "Enter" key in name input to save score
+            nameInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    saveScoreButton.click();
+                }
+            });
 
             // Event handlers
             function onWindowResize() {
@@ -1212,13 +1503,22 @@
             if (gameOver || !isGameActive || isReloading) return;
             
             if (event.button === 0 && config.ammo > 0) { // Left mouse button
+                // Get direction from camera's facing direction
                 const direction = new THREE.Vector3(0, 0, -1);
                 direction.applyQuaternion(camera.quaternion);
                 
+                // Spawn bullet slightly in front of the camera to prevent collisions
+                const bulletSpawnOffset = 0.5;
+                const bulletPosition = new THREE.Vector3(
+                    camera.position.x + direction.x * bulletSpawnOffset,
+                    camera.position.y + direction.y * bulletSpawnOffset,
+                    camera.position.z + direction.z * bulletSpawnOffset
+                );
+                
                 const bullet = createBullet(
-                    camera.position.x,
-                    camera.position.y,
-                    camera.position.z,
+                    bulletPosition.x,
+                    bulletPosition.y,
+                    bulletPosition.z,
                     direction
                 );
                 bullets.push(bullet);
@@ -1242,210 +1542,67 @@
             function updatePlayer(delta) {
                 if (!playerBody) return;
 
-                const velocity = new THREE.Vector3();
-                if (movement.forward) velocity.z -= 1;
-                if (movement.backward) velocity.z += 1;
-                if (movement.left) velocity.x -= 1;
-                if (movement.right) velocity.x += 1;
-                velocity.normalize();
+                // Movement direction based on keys
+                const moveDirection = new THREE.Vector3();
+                if (movement.forward) moveDirection.z -= 1;
+                if (movement.backward) moveDirection.z += 1;
+                if (movement.left) moveDirection.x -= 1;
+                if (movement.right) moveDirection.x += 1;
 
-                const scaledSpeed = config.playerSpeed * delta;
-                playerBody.velocity.x = velocity.x * scaledSpeed;
-                playerBody.velocity.z = velocity.z * scaledSpeed;
-
-                if (movement.jump && canJump) {
-                    playerBody.velocity.y = config.jumpForce;
-                    canJump = false;
+                // Only normalize if we're moving
+                if (moveDirection.length() > 0) {
+                    moveDirection.normalize();
                 }
 
-                // Update camera position
-                camera.position.set(
-                    playerBody.position.x,
-                    playerBody.position.y + 1.5, // Camera is slightly above the player
-                    playerBody.position.z
-                );
-                controls.getObject().position.copy(camera.position);
-            }
-
-            function updateBullets(delta) {
-                const now = Date.now();
+                // Convert to camera-relative direction
+                const cameraDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+                const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
                 
-                for (let i = bullets.length - 1; i >= 0; i--) {
-                    const bullet = bullets[i];
-                    if (!bullet || !bullet.isAlive) {
-                        removeBullet(bullet);
-                        continue;
-                    }
-                    
-                    // Update bullet position
-                    if (bullet.mesh && bullet.body) {
-                        bullet.mesh.position.copy(bullet.body.position);
-                    }
-                    
-                    // Check bullet lifetime
-                    if (now - bullet.created > config.bulletLifetime) {
-                        bullet.isAlive = false;
-                        removeBullet(bullet);
-                        continue;
-                    }
-                    
-                    // Check for collision with enemies
-                    for (const enemy of enemies) {
-                        if (enemy && enemy.isAlive && enemy.mesh) {
-                            const distance = bullet.mesh.position.distanceTo(enemy.mesh.position);
-                            if (distance < 0.8) { // Adjust as needed
-                                // Add ultimate charge on hit
-                                config.ultimateCharge = Math.min(config.ultimateCharge + 5, config.ultimateChargeMax);
-                                updateUltimateUI();
-                                
-                                damageEnemy(enemy, config.bulletDamage);
-                                bullet.isAlive = false;
-                                removeBullet(bullet);
-                                showHitMarker();
-                                break; // Important: Break after handling collision
-                            }
-                        }
-                    }
-                    
-                    // Remove bullets that go too far
-                    if (bullet.mesh && bullet.mesh.position.distanceTo(camera.position) > 100) {
-                        bullet.isAlive = false;
-                        removeBullet(bullet);
-                    }
-                }
-            }
-
-            function updateEnemies(delta) {
-                for (let i = enemies.length - 1; i >= 0; i--) {
-                    const enemy = enemies[i];
-                    if (!enemy || !enemy.isAlive) continue;
-
-                    if(enemy.type && enemy.type.update){
-                      enemy.type.update(enemy, delta);
-                    }
-
-                    if (enemy.mesh && enemy.body) {
-                        enemy.mesh.position.copy(enemy.body.position);
-
-                        // Enemy AI: Follow player
-                        const direction = new THREE.Vector3();
-                        direction.subVectors(playerBody.position, enemy.mesh.position);
-                        direction.normalize();
-                        enemy.body.velocity.x = direction.x * enemy.speed;
-                        enemy.body.velocity.z = direction.z * enemy.speed;
-
-                        // Check for collision with player (for damage)
-                        const distance = playerBody.position.distanceTo(enemy.mesh.position);
-                        if (distance < 1.5) { // Adjust as needed
-                            config.playerHealth -= enemy.damage;
-                            healthDisplay.textContent = config.playerHealth;
-                            healthFill.style.width = config.playerHealth + '%';
-                            try {
-                                playSound(sounds.playerHit);
-                            } catch (e) {
-                                console.warn("Error playing hit sound:", e);
-                            }
-                            if (config.playerHealth <= 0) {
-                                handleGameOver();
-                            }
-                            // Only damage enemy when hitting it
-                            damageEnemy(enemy, 10);
-                        }
-                    }
-                }
-            }
-
-          function updatePowerUps() {
-            for (let i = powerUps.length - 1; i >= 0; i--) {
-              const powerUp = powerUps[i];
-              if (!powerUp.isAlive) continue;
-              handlePowerUpCollision(playerBody, powerUp);
-            }
-          }
-
-            function showHitMarker() {
-                hitMarker.style.display = 'block';
-                setTimeout(() => {
-                    hitMarker.style.display = 'none';
-                }, 100); // Hide after 100ms
-            }
-
-            function animate() {
-                if (!isGameActive) {
-                    requestAnimationFrame(animate);
-                    return;
-                }
-
-                const currentTime = performance.now();
-                const delta = Math.min((currentTime - lastTime) / 1000, 0.1); // Cap delta at 0.1 for stability
-                lastTime = currentTime;
-
-                updateFPS(); // Update FPS counter
+                // Project movement onto horizontal plane
+                cameraDirection.y = 0;
+                cameraRight.y = 0;
+                cameraDirection.normalize();
+                cameraRight.normalize();
                 
-                // Physics and game updates
-                world.step(delta);
-                updatePlayer(delta);
-                updateBullets(delta);
-                updateEnemies(delta);
-                updatePowerUps();
-
-                // Charge ultimate over time
-                if (config.ultimateCharge < config.ultimateChargeMax) {
-                    config.ultimateCharge += delta * 2; // Charge 2 points per second
-                    if (config.ultimateCharge >= config.ultimateChargeMax) {
-                        config.ultimateCharge = config.ultimateChargeMax;
-                    }
-                    updateUltimateUI();
-                }
-
-                // Cap enemy count. Adjust timing as needed.
-                if (enemies.length < config.maxEnemies && Math.random() < 0.05) {
-                    spawnEnemy();
-                }
-
-                renderer.render(scene, camera);
-                requestAnimationFrame(animate);
-            }
-
-            // Pre-load sounds
-            function preloadSounds() {
-                try {
-                    Object.values(sounds).forEach(sound => {
-                        sound.load();
-                    });
-                    backgroundMusic.load();
-                } catch (e) {
-                    console.warn("Error preloading sounds:", e);
-                }
-            }
-
-            // Start the game setup
-            function init() {
-                // Set up event listeners
-                document.getElementById('startButton').addEventListener('click', startGame);
-                document.getElementById('restartButton').addEventListener('click', restartGame);
-
-                // Pre-load sounds
-                preloadSounds();
-
-                // Display instructions
-                console.log("Game initialized. Click Start to begin!");
-            }
-
-            // Handle browser visibility changes
-            document.addEventListener('visibilitychange', function() {
-                if (document.hidden) {
-                    // Pause game when tab is not active
-                    if (backgroundMusic) {
-                        backgroundMusic.pause();
-                    }
+                // Calculate movement vector in camera space
+                const movementVector = new THREE.Vector3();
+                movementVector.addScaledVector(cameraDirection, -moveDirection.z);
+                movementVector.addScaledVector(cameraRight, moveDirection.x);
+                
+                // Acceleration and maximum speed
+                const acceleration = 30.0 * delta;
+                const maxSpeed = config.playerSpeed;
+                const friction = 5.0 * delta;
+                
+                // Current velocity (only horizontal components)
+                const currentVelocity = new THREE.Vector3(playerBody.velocity.x, 0, playerBody.velocity.z);
+                
+                // Apply acceleration if moving
+                if (movementVector.length() > 0) {
+                    // Target velocity based on input
+                    const targetVelocity = movementVector.clone().multiplyScalar(maxSpeed);
+                    
+                    // Accelerate towards target velocity
+                    currentVelocity.lerp(targetVelocity, acceleration);
                 } else {
-                    // Resume game when tab is active again
-                    if (isGameActive && !gameOver && backgroundMusic) {
-                        backgroundMusic.play();
+                    // Apply friction when no movement input
+                    const speed = currentVelocity.length();
+                    if (speed > 0) {
+                        const decelerationFactor = Math.max(0, 1 - friction);
+                        currentVelocity.multiplyScalar(decelerationFactor);
                     }
                 }
-            });
+                
+                // Apply calculated velocity to physics body
+                playerBody.velocity.x = currentVelocity.x;
+                playerBody.velocity.z = currentVelocity.z;
+                
+                // Preserve y-velocity (for jumping/falling)
+                playerBody.velocity.y = Math.max(playerBody.velocity.y, -20); // Terminal velocity
+                
+                // Sync camera position with physics body
+                camera.position.copy(playerBody.position);
+            }
 
             // Handle game exit
             window.addEventListener('beforeunload', function() {
@@ -1564,6 +1721,351 @@
                     ammoDisplay.textContent = config.ammo;
                     isReloading = false;
                 }, config.reloadTime);
+            }
+
+            // Function to handle game over
+            function handleGameOver() {
+                gameOver = true;
+                isGameActive = false;
+                controls.unlock();
+                backgroundMusic.pause();
+                playSound(sounds.gameOver);
+                
+                // Set current score
+                currentScore = config.score;
+                finalScore.textContent = 'Score: ' + currentScore;
+                
+                // Check if it's a high score
+                if (highscoreManager.isHighscore(currentScore)) {
+                    nameInputContainer.style.display = 'block';
+                    nameInput.focus(); // Focus the input field
+                    nameInput.value = localStorage.getItem('playerName') || ''; // Pre-fill with last used name
+                } else {
+                    nameInputContainer.style.display = 'none';
+                }
+                
+                gameOverScreen.style.display = 'flex';
+            }
+
+            // Animation loop for the game
+            function animate() {
+                if (!isGameActive) return;
+                
+                // Request next frame first to ensure loop continues even if there's an error
+                requestAnimationFrame(animate);
+                
+                try {
+                    const now = performance.now();
+                    const delta = Math.min((now - lastTime) / 1000, 0.1); // Cap delta time to prevent huge jumps
+                    lastTime = now;
+                    
+                    // Update physics
+                    world.step(1/60);
+                    
+                    // Update player movement
+                    if (movement.jump && canJump) {
+                        playerBody.velocity.y = config.jumpForce;
+                        canJump = false;
+                    }
+                    
+                    updatePlayer(delta);
+                    
+                    // Update enemies safely
+                    for (let i = enemies.length - 1; i >= 0; i--) {
+                        // Skip if index is invalid
+                        if (i >= enemies.length) continue;
+                        
+                        const enemy = enemies[i];
+                        if (!enemy || !enemy.isAlive || !enemy.body || !enemy.mesh) {
+                            if (enemy) removeEnemy(enemy);
+                            continue;
+                        }
+                        
+                        // Update enemy position from physics body
+                        enemy.mesh.position.copy(enemy.body.position);
+                        
+                        // Move enemy towards player
+                        const direction = new THREE.Vector3();
+                        direction.subVectors(playerBody.position, enemy.body.position);
+                        direction.y = 0; // Keep movement on the xz plane
+                        direction.normalize();
+                        
+                        // Apply custom enemy behavior if available
+                        if (enemy.type && enemy.type.update) {
+                            try {
+                                enemy.type.update(enemy, delta);
+                            } catch (e) {
+                                console.error("Error in enemy update:", e);
+                            }
+                        } else {
+                            // Default behavior
+                            enemy.body.velocity.x = direction.x * enemy.speed;
+                            enemy.body.velocity.z = direction.z * enemy.speed;
+                        }
+                        
+                        // Check if enemy is close enough to damage player
+                        const distance = playerBody.position.distanceTo(enemy.body.position);
+                        if (distance < 2) { // If enemy is within 2 units
+                            // Apply damage to player (with cooldown)
+                            if (now - (enemy.lastAttack || 0) > 1000) { // Attack once per second
+                                config.playerHealth -= enemy.damage;
+                                healthDisplay.textContent = config.playerHealth;
+                                healthFill.style.width = config.playerHealth + '%';
+                                enemy.lastAttack = now;
+                                playSound(sounds.playerHit);
+                                
+                                if (config.playerHealth <= 0) {
+                                    handleGameOver();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Periodically spawn enemies if below limit
+                    if (enemies.length < config.maxEnemies) {
+                        if (Math.random() < 0.005 + (0.002 * config.wave)) { // Increased spawn chance in later waves
+                            try {
+                                spawnEnemy();
+                            } catch (e) {
+                                console.error("Error spawning enemy in animate:", e);
+                            }
+                        }
+                    }
+                    
+                    // Handle bullets safely
+                    for (let i = bullets.length - 1; i >= 0; i--) {
+                        // Skip if index is invalid
+                        if (i >= bullets.length) continue;
+                        
+                        const bullet = bullets[i];
+                        if (!bullet || !bullet.isAlive || !bullet.body || !bullet.mesh) {
+                            if (bullet) removeBullet(bullet);
+                            continue;
+                        }
+                        
+                        // Update bullet position
+                        bullet.mesh.position.copy(bullet.body.position);
+                        
+                        // Check for collisions with enemies
+                        let hitEnemy = false;
+                        for (let j = enemies.length - 1; j >= 0; j--) {
+                            // Skip if index is invalid
+                            if (j >= enemies.length) continue;
+                            
+                            const enemy = enemies[j];
+                            if (!enemy || !enemy.isAlive || !enemy.body) continue;
+                            
+                            const distance = bullet.body.position.distanceTo(enemy.body.position);
+                            if (distance < 1) { // If bullet hits enemy
+                                try {
+                                    damageEnemy(enemy, config.bulletDamage);
+                                    bullet.isAlive = false;
+                                    hitEnemy = true;
+                                    showHitMarker();
+                                    // Add ultimate charge on hit
+                                    config.ultimateCharge = Math.min(config.ultimateCharge + 5, config.ultimateChargeMax);
+                                    updateUltimateUI();
+                                } catch (e) {
+                                    console.error("Error handling bullet collision:", e);
+                                }
+                                break;
+                            }
+                        }
+                        
+                        // Remove bullets that have exceeded their lifetime
+                        if (!bullet.isAlive || hitEnemy || Date.now() - bullet.created > config.bulletLifetime * 1000) {
+                            removeBullet(bullet);
+                        }
+                    }
+                    
+                    // Check for player-powerup collisions
+                    for (let i = powerUps.length - 1; i >= 0; i--) {
+                        if (i >= powerUps.length) continue;
+                        try {
+                            if (powerUps[i]) {
+                                handlePowerUpCollision(playerBody, powerUps[i]);
+                            }
+                        } catch (e) {
+                            console.error("Error handling powerup collision:", e);
+                        }
+                    }
+                    
+                    // Memory management - clear excessive bullets
+                    if (bullets.length > 50) {
+                        for (let i = 0; i < bullets.length - 50; i++) {
+                            removeBullet(bullets[i]);
+                        }
+                    }
+                    
+                    // Render scene
+                    renderer.render(scene, camera);
+                    
+                    // Update FPS counter
+                    updateFPS();
+                } catch (e) {
+                    console.error("Error in animation loop:", e);
+                }
+            }
+            
+            // Function to show hit marker
+            function showHitMarker() {
+                hitMarker.style.display = 'block';
+                setTimeout(() => {
+                    hitMarker.style.display = 'none';
+                }, 100);
+            }
+
+            // Function to create enemy mesh
+            function createEnemyMesh(color, scale) {
+                const geometry = new THREE.SphereGeometry(0.5 * scale, 8, 8);
+                const material = new THREE.MeshStandardMaterial({ color: color, roughness: 0.9, metalness: 0.1 });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                return mesh;
+            }
+
+            // Function to create enemy physics body
+            function createEnemyPhysicsBody(x, y, z, scale) {
+                const shape = new CANNON.Sphere(0.5 * scale);
+                const body = new CANNON.Body({
+                    mass: 10 * scale,
+                    position: new CANNON.Vec3(x, y, z),
+                    linearDamping: 0.9
+                });
+                body.addShape(shape);
+                return body;
+            }
+
+            // Function to remove enemy
+            function removeEnemy(enemy) {
+                if (!enemy) return;
+                
+                try {
+                    // Remove from scene
+                    if (enemy.mesh) {
+                        scene.remove(enemy.mesh);
+                    }
+                    
+                    // Remove from physics world
+                    if (enemy.body) {
+                        enemy.body.position.set(0, -1000, 0); // Move far away before removal
+                        world.removeBody(enemy.body);
+                    }
+                    
+                    // Remove from array
+                    const index = enemies.indexOf(enemy);
+                    if (index > -1) {
+                        enemies.splice(index, 1);
+                    }
+                    
+                    config.enemyCount = Math.max(0, config.enemyCount - 1);
+                } catch (e) {
+                    console.error("Error removing enemy:", e);
+                }
+            }
+
+            // Function to deal damage to enemy
+            function damageEnemy(enemy, damage) {
+                if (!enemy || !enemy.isAlive) return;
+                
+                // Apply damage
+                enemy.health -= damage;
+                
+                if (enemy.health <= 0) {
+                    enemy.isAlive = false;
+                    config.score += enemy.type.scoreValue;
+                    scoreDisplay.textContent = 'Score: ' + config.score;
+                    config.enemiesKilled++;
+                    
+                    // Execute onDeath effects if any
+                    if (enemy.type.onDeath) {
+                        try {
+                            enemy.type.onDeath(enemy);
+                        } catch (e) {
+                            console.error("Error in enemy death effect:", e);
+                        }
+                    }
+                    
+                    playSound(sounds.enemyDie);
+                    removeEnemy(enemy);
+                    
+                    // Wave management
+                    config.killsPerWave--;
+                    
+                    if (config.killsPerWave <= 0) {
+                        // Advance to next wave
+                        config.wave++;
+                        waveInfo.textContent = 'Wave: ' + config.wave;
+                        
+                        // Reset kills needed for next wave with scaling difficulty
+                        config.killsPerWave = 5 + (5 * config.wave); // Increase kills per wave
+                        
+                        // Increase enemy limits and spawn new wave
+                        config.maxEnemies = Math.min(10 + (config.wave * 2), 30); // Cap at 30 max enemies
+                        
+                        // Clear any stuck enemies (safety measure)
+                        if (enemies.length > config.maxEnemies / 2) {
+                            while (enemies.length > config.maxEnemies / 2) {
+                                removeEnemy(enemies[0]);
+                            }
+                        }
+                        
+                        // Spawn new wave with slight delay
+                        setTimeout(spawnEnemyWave, 1000);
+                        
+                        console.log("Starting Wave " + config.wave + " - Kills needed: " + config.killsPerWave + " - Max enemies: " + config.maxEnemies);
+                    }
+                }
+            }
+
+            // Initialize the game environment and systems
+            function init() {
+                // Remove any existing event listeners (prevent duplicates)
+                window.removeEventListener('resize', onWindowResize);
+                document.removeEventListener('keydown', onKeyDown);
+                document.removeEventListener('keyup', onKeyUp);
+                document.removeEventListener('mousedown', onMouseDown);
+                document.removeEventListener('mouseup', onMouseUp);
+                
+                if (startButton) {
+                    startButton.removeEventListener('click', startGame);
+                    startButton.addEventListener('click', startGame);
+                }
+                
+                if (restartButton) {
+                    restartButton.removeEventListener('click', restartGame);
+                    restartButton.addEventListener('click', restartGame);
+                }
+                
+                // Create server room environment
+                createEnvironment();
+                
+                // Set up event listeners
+                window.addEventListener('resize', onWindowResize);
+                document.addEventListener('keydown', onKeyDown);
+                document.addEventListener('keyup', onKeyUp);
+                document.addEventListener('mousedown', onMouseDown);
+                document.addEventListener('mouseup', onMouseUp);
+                
+                // Set up controls lock change handler
+                controls.removeEventListener('lock', null);
+                controls.removeEventListener('unlock', null);
+                
+                controls.addEventListener('lock', function() {
+                    if (!gameOver) {
+                        isGameActive = true;
+                    }
+                });
+                
+                controls.addEventListener('unlock', function() {
+                    if (isGameActive && !gameOver) {
+                        // Game is paused
+                    }
+                });
+                
+                console.log("Game initialized successfully");
             }
 
             init(); // Call init to set up the game

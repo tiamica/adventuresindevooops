@@ -56,6 +56,10 @@
 | Melee           | Right Click   |
 | Ultimate        | Q             |
 | Toggle Shield   | E             |
+| Pause           | ESC           |
+| Toggle Audio    | M             |
+| Reload          | R             |
+| Melee           | F             |
 
 **Objective:** Survive waves of enemies while protecting the CI/CD pipeline!
    ```
@@ -63,7 +67,7 @@
 
 1. Clone repo:
    ```bash
-   git clone https://github.com/yourusername/adventures-in-devoops.git
+   git clone https://github.com/tiamica/adventuresindevooops.git
    ```
 2. Install dependencies:
    ```bash

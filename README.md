@@ -6,7 +6,7 @@
 
 **A browser-based FPS where DevOps meets bug-squashing mayhem!** Battle software bugs, security exploits, and legacy systems in this neon-lit tech nightmare. Built with Three.js.
 
-[![Play Now](https://img.shields.io/badge/PLAY%20NOW-%E2%86%92-orange?style=for-the-badge)](https://your-deployment-url.com) *(placeholder link)*
+[![Play Now](https://img.shields.io/badge/PLAY%20NOW-%E2%86%92-orange?style=for-the-badge)](https://tiamica.github.io/adventuresindevooops/)
 
 ![Gameplay Screenshot](./screenshots/gameplay.png) *(Add actual screenshot path)*
 
